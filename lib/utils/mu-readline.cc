@@ -73,7 +73,7 @@ Mu::have_readline()
 void
 Mu::setup_readline(const std::string& histpath, size_t maxlines)
 {
-	is_a_tty  = !!::isatty(::fileno(stdout));
+	is_a_tty = !!isatty(STDOUT_FILENO);
 	hist_path = histpath;
 	max_lines = maxlines;
 
