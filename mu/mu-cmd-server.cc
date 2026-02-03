@@ -50,6 +50,7 @@ sig_handler(int sig)
 static void
 install_sig_handler()
 {
+#if !defined(__CYGWIN__) && !defined(__MSYS__)
 	MuTerminate = 0;
 
 	struct sigaction action{};
@@ -61,6 +62,12 @@ install_sig_handler()
 		if (sigaction(sig, &action, NULL) != 0)
 			mu_critical("set sigaction for {} failed: {}",
 				    sig, g_strerror(errno));
+#else
+	signal(SIGINT,  sig_handler);
+	signal(SIGHUP,  sig_handler);
+	signal(SIGTERM, sig_handler);
+	signal(SIGPIPE, sig_handler);
+#endif
 }
 
 /*
@@ -111,7 +118,7 @@ report_error(const Mu::Error& err) noexcept
 static void
 maybe_setup_readline(const Mu::Options& opts)
 {
-	tty = ::isatty(::fileno(stdout));
+	tty = ::isatty(STDOUT_FILENO);
 
 	// Note, the readline stuff is inactive unless on a tty.
 	const auto histpath{opts.runtime_path(RuntimePath::Cache) + "/history"};
