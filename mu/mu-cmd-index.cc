@@ -45,6 +45,7 @@ sig_handler(int _sig)
 static void
 install_sig_handler(void)
 {
+#if !defined(__CYGWIN__) && !defined(__MSYS__)
 	struct sigaction action;
 	int              i, sigs[] = {SIGINT, SIGHUP, SIGTERM};
 
@@ -56,6 +57,11 @@ install_sig_handler(void)
 		if (sigaction(sigs[i], &action, NULL) != 0)
 			mu_critical("set sigaction for {} failed: {}",
 				   sigs[i], g_strerror(errno));
+#else
+	signal(SIGINT,  sig_handler);
+	signal(SIGTERM, sig_handler);
+	signal(SIGHUP,  sig_handler);
+#endif
 }
 
 static void
