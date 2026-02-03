@@ -59,18 +59,17 @@ Mu::set_tz(const char* tz)
 
 	oldtz = getenv("TZ");
 	if (tz)
-		setenv("TZ", tz, 1);
+		g_setenv("TZ", tz, TRUE);
 	else
-		unsetenv("TZ");
+		g_unsetenv("TZ");
 
-	tzset();
 	return oldtz;
 }
 
 bool
 Mu::set_en_us_utf8_locale()
 {
-	setenv("LC_ALL", "en_US.UTF-8", 1);
+	g_setenv("LC_ALL", "en_US.UTF-8", TRUE);
 
 	if (auto str = setlocale(LC_ALL, "en_US.UTF-8"); !str)
 		return false;

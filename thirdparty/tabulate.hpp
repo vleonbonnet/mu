@@ -5653,7 +5653,7 @@ nssv_RESTORE_WARNINGS()
 // which are used for testing whether a standart stream refers
 // to the terminal. As for Windows, we also need WinApi funcs
 // for changing colors attributes of the terminal.
-#if defined(TERMCOLOR_OS_MACOS) || defined(TERMCOLOR_OS_LINUX)
+#if defined(TERMCOLOR_OS_MACOS) || defined(TERMCOLOR_OS_LINUX) || defined(__CYGWIN__) || defined(__MSYS__)
 #include <unistd.h>
 #elif defined(TERMCOLOR_OS_WINDOWS)
 #include <io.h>
@@ -5999,7 +5999,12 @@ inline bool is_atty(const std::ostream &stream) {
   if (!std_stream)
     return false;
 
-#if defined(TERMCOLOR_OS_MACOS) || defined(TERMCOLOR_OS_LINUX)
+#if defined(__CYGWIN__) || defined(__MSYS__)
+  // Avoid fileno() prototype issues: only need stdout/stderr
+  if (std_stream == stdout) return ::isatty(STDOUT_FILENO);
+  if (std_stream == stderr) return ::isatty(STDERR_FILENO);
+  return false;
+#elif defined(TERMCOLOR_OS_MACOS) || defined(TERMCOLOR_OS_LINUX)
   return ::isatty(fileno(std_stream));
 #elif defined(TERMCOLOR_OS_WINDOWS)
   return ::_isatty(_fileno(std_stream));
@@ -6132,7 +6137,12 @@ inline int get_wcswidth(const std::string &string, const std::string &locale,
   std::mbstowcs(wide_string, string.c_str(), string.size());
 
   // Compute display width of wide string
+#if defined(__CYGWIN__) || defined(__MSYS__)
+  // Fallback: approximate width by number of wide chars (not perfect for East Asian width)
+  int result = (int)wcslen(wide_string);
+#else
   int result = wcswidth(wide_string, max_column_width);
+#endif
   delete[] wide_string;
 
   // Restore old locale
