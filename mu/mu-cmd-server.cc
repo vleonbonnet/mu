@@ -50,6 +50,7 @@ sig_handler(int sig)
 static void
 install_sig_handler()
 {
+#if !defined(__CYGWIN__) && !defined(__MSYS__)
 	MuTerminate = 0;
 
 	struct sigaction action{};
@@ -61,6 +62,12 @@ install_sig_handler()
 		if (sigaction(sig, &action, NULL) != 0)
 			mu_critical("set sigaction for {} failed: {}",
 				    sig, g_strerror(errno));
+#else
+	signal(SIGINT,  sig_handler);
+	signal(SIGHUP,  sig_handler);
+	signal(SIGTERM, sig_handler);
+	signal(SIGPIPE, sig_handler);
+#endif
 }
 
 /*
@@ -160,7 +167,7 @@ Mu::mu_cmd_server(const Mu::Options& opts) try {
 
 	// determine this before any server output, so it holds for
 	// --eval/--commands as well.
-	tty = ::isatty(::fileno(stdout));
+	tty = ::isatty(STDOUT_FILENO);
 
 	Server::Options sopts{opts.server.allow_temp_file, socket_path};
 	Server server{*store, sopts, output_stdout};
