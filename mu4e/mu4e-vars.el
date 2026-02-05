@@ -347,7 +347,7 @@ Note, `:sortable' is not supported for custom header fields.")
        :help "The thread-path"
        :function (lambda (msg)
                    (let ((thread (mu4e-message-field msg :thread)))
-                     (or (and thread (plist-get thread :path)) "")))))
+                     (or (and thread (mu4e-msys-path->win (plist-get thread :path))) "")))))
 
     (:thread-date
      . ;; Shows the internal thread-date

@@ -658,5 +658,15 @@ shorter keys in some cases where there are multiple bindings."
              (seq-map #'key-description
                       (where-is-internal cmd)))))
 
+(defun mu4e-msys-path->win (p)
+    (if (and p (> (length p) 2) (eq (aref p 0) ?/) (eq (aref p 2) ?/)
+             (let ((c (aref p 1))) (or (<= ?a c ?z) (<= ?A c ?Z))))
+        (concat (string (aref p 1)) ":" (substring p 2)) p))
+
+(defun mu4e-win-path->msys (p)
+  (if (and p (> (length p) 2) (eq (aref p 1) ?:)
+           (let ((c (aref p 0))) (or (<= ?a c ?z) (<= ?A c ?Z))))
+      (concat "/" (downcase (string (aref p 0))) (substring p 2)) p))
+
 (provide 'mu4e-helpers)
 ;;; mu4e-helpers.el ends here

@@ -43,7 +43,7 @@ Works for headers view and message-view."
   (message "Number of lines: %s"
            (shell-command-to-string
             (concat "wc -l < "
-                    (shell-quote-argument (mu4e-message-field msg :path))))))
+                    (shell-quote-argument (mu4e-msys-path->win (mu4e-message-field msg :path)))))))
 
 ;;; Org Helpers
 
@@ -59,7 +59,7 @@ Later, we can create an attachment based on this message with
 
 (defun mu4e-action-copy-message-file-path (msg)
   "Save the full path for the current MSG to the kill ring."
-  (kill-new (mu4e-message-field msg :path)))
+  (kill-new (mu4e-msys-path->win (mu4e-message-field msg :path))))
 
 (defvar mu4e-org-contacts-file nil
   "File to store contact information for org-contacts.
@@ -120,7 +120,7 @@ file where you store your org-contacts."
     (let ((default-directory path))
       (shell-command
        (format "git apply %s"
-               (shell-quote-argument (mu4e-message-field msg :path)))))))
+               (shell-quote-argument (mu4e-msys-path->win (mu4e-message-field msg :path))))))))
 ;; does this work correctly? I.e.: https://github.com/djcb/mu/issues/2827
 
 (defun mu4e-action-git-apply-mbox (msg &optional signoff)
@@ -138,7 +138,7 @@ bother asking for the git tree again (useful for bulk actions)."
       (shell-command
        (format "git am %s %s"
                (if signoff "--signoff" "")
-               (shell-quote-argument (mu4e-message-field msg :path)))))))
+               (shell-quote-argument (mu4e-msys-path->win (mu4e-message-field msg :path))))))))
 
 ;;; Tagging
 
@@ -186,7 +186,7 @@ RETAG-ARG is a comma-separated list of additions and removals.
 Example: +tag,+long tag,-oldtag
 would add \"tag\" and \"long tag\", and remove \"oldtag\"."
   (let* (
-         (path (mu4e-message-field msg :path))
+         (path (mu4e-msys-path->win (mu4e-message-field msg :path)))
          (oldtags (mu4e-message-field msg :tags))
          (tags-completion
           (append

@@ -102,7 +102,7 @@ Messages are expect to have been captured earlier with
 `org-mode' capturing."
   (interactive)
   (if-let* ((msg mu4e-captured-message)
-         (path (plist-get msg :path))
+         (path (mu4e-msys-path->win (plist-get msg :path)))
          (path (and (file-exists-p path) path))
          (descr (or (plist-get msg :subject) ""))
          (descr

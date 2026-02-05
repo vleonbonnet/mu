@@ -1368,7 +1368,7 @@ messages with that mark."
   "Get WHAT (a symbol, either path or thread-id) for MSG."
   (let* ((meta (or (mu4e-message-field msg :meta)
                      (mu4e-error "No thread info found")))
-         (path  (or (plist-get meta :path)
+         (path  (or (mu4e-msys-path->win (plist-get meta :path))
                     (mu4e-error "No threadpath found"))))
     (cl-case what
       (path path)
