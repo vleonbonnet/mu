@@ -652,7 +652,7 @@ Not to be confused with the SCM/Guile REPL, as per
   "Add the message at PATH to the database.
 On success, we receive `'(:info add :path <path> :docid <docid>)'
 as well as `'(:update <msg-sexp>)`'; otherwise, we receive an error."
-  (mu4e--server-call-mu `(add :path ,path)))
+  (mu4e--server-call-mu `(add :path ,(mu4e-msys-path->win path))))
 
 (defun mu4e--server-contacts (personal after maxnum tstamp)
   "Ask for contacts with PERSONAL AFTER MAXNUM TSTAMP.
@@ -737,7 +737,7 @@ PATH must be below the root-maildir."
     (add-to-list 'mu4e-maildir-list ;; update cache
                  (substring path (length (mu4e-root-maildir)))))
   (mu4e--server-call-mu `(mkdir
-                          :path ,path
+                          :path ,(mu4e-msys-path->win path)
                           :update ,(or update nil))))
 
 (defun mu4e--server-move (docid-or-msgid &optional maildir flags no-view)
@@ -803,7 +803,7 @@ read/unread status are returned in the pong-response."
 The results are reported through either (:update ... )
 or (:error) sexps."
   (if (stringp docid-or-path)
-      (mu4e--server-call-mu `(remove :path ,docid-or-path))
+      (mu4e--server-call-mu `(remove :path ,(mu4e-win-path->msys docid-or-path)))
       (mu4e--server-call-mu `(remove :docid ,docid-or-path))))
 
 (defun mu4e--server-view (docid-or-msgid &optional mark-as-read)
