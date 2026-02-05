@@ -199,7 +199,7 @@ symbol, see `mu4e-header-info'."
 (defun mu4e-message-readable-path (&optional msg)
   "Get a readable path to MSG or raise an error.
 If MSG is nil, use `mu4e-message-at-point'."
-  (let ((path (plist-get (or msg (mu4e-message-at-point)) :path)))
+  (let ((path (mu4e-msys-path->win (plist-get (or msg (mu4e-message-at-point)) :path))))
     (unless (file-readable-p path)
       (mu4e-error "No readable message at %s; database outdated?" path))
     path))
@@ -207,7 +207,7 @@ If MSG is nil, use `mu4e-message-at-point'."
 (defun mu4e-copy-message-path ()
   "Copy the message-path of message at point to the kill ring."
   (interactive)
-  (let ((path (mu4e-message-field-at-point :path)))
+  (let ((path (mu4e-msys-path->win (mu4e-message-field-at-point :path))))
     (kill-new path)
     (mu4e-message "Saved '%s' to kill-ring" path)))
 

@@ -95,7 +95,7 @@ If MSG is non-nil, store a link to MSG, otherwise use `mu4e-message-at-point'."
                                         (mu4e-contact-email from)) ;; mu4e-specific
                   :maildir           ,(plist-get msg :maildir)
                   :message-id        ,msgid
-                  :path              ,(plist-get msg :path)
+                  :path              ,(mu4e-msys-path->win (plist-get msg :path))
                   :subject           ,(plist-get msg :subject)
                   :to                ,(mu4e-contact-full to)
                   :tonameoraddress   ,(or (mu4e-contact-name to)
