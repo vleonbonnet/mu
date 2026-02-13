@@ -210,7 +210,8 @@ sexp received from the server process.")
 (defun mu4e-root-maildir()
   "Get the root maildir."
   (or (and mu4e--server-props
-           (plist-get mu4e--server-props :root-maildir))
+           (mu4e-msys-path->win
+            (plist-get mu4e--server-props :root-maildir)))
       (mu4e-error "Root maildir unknown; did you start mu4e?")))
 
 (defun mu4e-database-path()
@@ -652,7 +653,7 @@ Not to be confused with the SCM/Guile REPL, as per
   "Add the message at PATH to the database.
 On success, we receive `'(:info add :path <path> :docid <docid>)'
 as well as `'(:update <msg-sexp>)`'; otherwise, we receive an error."
-  (mu4e--server-call-mu `(add :path ,(mu4e-msys-path->win path))))
+  (mu4e--server-call-mu `(add :path ,(mu4e-win-path->msys path))))
 
 (defun mu4e--server-contacts (personal after maxnum tstamp)
   "Ask for contacts with PERSONAL AFTER MAXNUM TSTAMP.
@@ -737,7 +738,7 @@ PATH must be below the root-maildir."
     (add-to-list 'mu4e-maildir-list ;; update cache
                  (substring path (length (mu4e-root-maildir)))))
   (mu4e--server-call-mu `(mkdir
-                          :path ,(mu4e-msys-path->win path)
+                          :path ,(mu4e-win-path->msys path)
                           :update ,(or update nil))))
 
 (defun mu4e--server-move (docid-or-msgid &optional maildir flags no-view)
