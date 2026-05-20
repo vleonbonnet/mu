@@ -136,6 +136,9 @@ struct Indexer::Private {
 			File
 		};
 		Type type;
+		// For Dir items: the directory's ctime as captured at EnterDir,
+		// used to compute a conservative dirstamp on LeaveDir.
+		::time_t enter_ctime;
 	};
 
 	void handle_item(WorkItem&& item);
@@ -268,7 +271,7 @@ Indexer::Private::handler(const std::string& fullpath, struct stat* statbuf,
 		// don't touch dirstamps in a cleanup-only run: nothing was
 		// indexed, so the dir is not to be considered up-to-date.
 		if (conf_.scan)
-			handle_item({fullpath, WorkItem::Type::Dir});
+			handle_item({fullpath, WorkItem::Type::Dir, statbuf->st_ctime});
 		return true;
 	}
 
@@ -281,9 +284,14 @@ Indexer::Private::handler(const std::string& fullpath, struct stat* statbuf,
 		if (!conf_.scan)
 			return false; // cleanup-only run; only mark.
 
-		if (conf_.lazy_check && static_cast<uint64_t>(statbuf->st_ctime) < last_index_) {
-			// in lazy mode, ignore the file if it has not changed
-			// since the last indexing op.
+		// In lazy mode, skip files older than the dir's recorded stamp
+		// (its ctime as captured at EnterDir on the previous scan).
+		// Using the per-dir stamp — rather than the per-scan
+		// last_index_ — means we only skip files that were definitely
+		// in the previous scan's readdir() snapshot. Files added during
+		// a previous scan have ctime > that scan's enter-ctime and so
+		// fall through to be (re-)indexed.
+		if (conf_.lazy_check && static_cast<time_t>(statbuf->st_ctime) <= dirstamp_) {
 			return false;
 		}
 
@@ -297,7 +305,7 @@ Indexer::Private::handler(const std::string& fullpath, struct stat* statbuf,
 		    (use_db_path_terms_ ? in_store : store_.contains_message(fullpath)))
 			return false;
 
-		handle_item({fullpath, WorkItem::Type::File});
+		handle_item({fullpath, WorkItem::Type::File, 0});
 		return true;
 	}
 	default:
@@ -345,7 +353,19 @@ Indexer::Private::handle_item(WorkItem&& item)
 				++progress_.updated;
 		} break;
 		case WorkItem::Type::Dir:
-			store_.set_dirstamp(item.full_path, started_.value());
+			// Record the dir's ctime as observed at EnterDir, not the
+			// scan start time. If a file landed between opendir() and
+			// closedir() it may have been missed by readdir() (POSIX
+			// leaves this unspecified, and macOS/APFS routinely drops
+			// it). Recording started_ would mark the dir as fully
+			// scanned through a moment that includes that file's
+			// ctime, and the lazy-check would never revisit it.
+			// Using enter_ctime guarantees that any concurrent
+			// addition (which bumps the dir's ctime past enter_ctime)
+			// causes a re-entry on the next scan.
+			store_.set_dirstamp(
+				item.full_path,
+				std::min<time_t>(started_.value(), item.enter_ctime));
 			break;
 		default:
 			g_warn_if_reached();
