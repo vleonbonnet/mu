@@ -21,6 +21,7 @@
   :use-module (system foreign)
   :use-module (rnrs bytevectors)
   :use-module (srfi srfi-1) ;; lists
+  :use-module (srfi srfi-19) ;; date/time
   :use-module (ice-9 optargs)
   :use-module (ice-9 format)
   :use-module (ice-9 binary-ports)
@@ -40,7 +41,11 @@
 	    message->alist
 
 	    date
+            date-object
+            utc-offset
+
 	    changed
+            changed-object
 
 	    message-id
 	    path
@@ -121,6 +126,40 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
 ;; Helpers
+
+(define-syntax if-let*
+  (syntax-rules ()
+    "Bind variables according to VAR and evaluate THEN or ELSE.
+Evaluate each binding in turn, as in ‘let*’, stopping if a binding value is nil.
+If all are non-nil return the value of THEN, otherwise the value of the last
+form in ELSE, or #f if there are none."
+    ((_ () then) then)
+    ((_ () then else) then)
+    ((_ ((var expr) rest ...) then)
+     (if-let* ((var expr) rest ...) then #f))
+    ((_ ((var expr) rest ...) then else)
+     (let ((var expr))
+       (if var
+           (if-let* (rest ...) then else)
+           else)))))
+
+(define-syntax when-let*
+  (syntax-rules ()
+    "Bind variables according to VAR and evaluate THEN.
+Evaluate each binding in turn, as in ‘let*’, stopping if a binding value is nil.
+If all are non-nil return the value of THEN, or #f if there are none."
+    ((_ (bindings ...) body body* ...)
+     (if-let* (bindings ...) (begin body body* ...)))))
+
+(define-syntax if-let
+  (syntax-rules ()
+    "Alias for if-let*."
+    ((_ args ...) (if-let* args ...))))
+
+(define-syntax when-let
+  (syntax-rules ()
+    "Alias for when-let*."
+    ((_ args ...) (when-let* args ...))))
 
 (define (set-documentation! symbol docstring)
   "Set the docstring for symbol in current module to docstring.
@@ -213,7 +252,6 @@ CONTENT-ONLY? is implied to be #t."
   "Determine the file-name for MIME-part.
 Either the 'filename' field in the mime-part and if that does not exist, use
 'mime-part-<index>' with <index> being the number of the mime-part.")
-
 
 (define* (make-output-file mime-part #:key (path #f) (overwrite? #f))
   "Create a port for the file to write MIME-PART to.
@@ -331,10 +369,29 @@ path of the message."
 This is the number of seconds since epoch; #f if not found."
   (assoc-ref (message->alist message) 'date))
 
+(define-method (utc-offset (message <message>))
+  "Get the UTC offset in seconds for this MESSAGE.
+I.e., the offset from the UTC for the time the message was sent.
+#f if not available."
+    (assoc-ref (message->alist message) 'utc-offset))
+
+(define-method (date-object (message <message>))
+  "Get an SRFI-19 date object for MESSAGE's sent date.
+This includes the date and the timezone (if known). #f if not found."
+  (when-let ((unix-time (date message)))
+    (time-utc->date (make-time 'time-utc 0 unix-time)
+                    (or (utc-offset message) 0))))
+
 (define-method (changed (message <message>))
   "Get the timestamp for the last change to MESSAGE.
 This is the number of seconds since epoch; #f if not found."
   (assoc-ref (message->alist message) 'changed))
+
+(define-method (changed-object (message <message>))
+  "Get an SRFI-19 date object for MESSAGE's last-change.
+No time-zone offset is defined. #f if not found."
+  (when-let ((unix-time (changed message)))
+    (time-utc->date (make-time 'time-utc 0 unix-time))))
 
 (define-method (path (message <message>))
   "Get the file-system path for MESSAGE or #f if not found."
@@ -348,11 +405,8 @@ A symbol, either 'high, 'low or 'normal, or #f if not found."
 (define-method (language (message <message>))
   "Get the ISO-639-1 language code for the MESSAGE as a symbol, if detected.
 Return #f otherwise."
-  (let ((lang (assoc-ref (message->alist message) 'language)))
-    (if lang
-	(string->symbol lang)
-	#f)))
-;; if-let would be nice!
+  (when-let ((lang (assoc-ref (message->alist message) 'language)))
+    (string->symbol lang)))
 
 (define-method (size (message <message>))
   "Get the size of the MESSAGE in bytes or #f if not available."
@@ -374,10 +428,9 @@ the empty list."
   "Get the oldest (first) reference for MESSAGE, or message-id if there are none.
 If neither are available, return #f.
 This is method is useful to determine the thread a message is in."
-  (let ((refs (references message)))
-    (if (and refs (not (null? refs)))
-	(car refs)
-	(message-id message))))
+  (if-let* ((refs (references message)) (_ (not (null? refs))))
+    (car refs)
+    (message-id message)))
 
 (define-method (mailing-list (message <message>))
   "Get the mailing-list id for MESSAGE or #f if not available."
@@ -661,7 +714,7 @@ If FIELD does not exist, return #f."
   "Alist with user-preferences.
 - short-date: a strftime-compatibie string for the display
 	      format of short dates.
-- utc?       : whether to assume use UTC for dates/times")
+- utc?       : whether to assume UTC for dates/times")
 
 (define (value-or-preference val key)
   "If VAL is the symbol 'preference, return the value for KEY from %preferences.

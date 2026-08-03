@@ -741,7 +741,13 @@ fill_document(Message::Private& priv)
 				doc.add(field.id, priv.ctime);
 			break;
 		case Field::Id::Date:
-			doc.add(field.id, mime_msg.date());
+			/* for the rare message without a Date: header, fall back
+			 * to the most recent Received: header */
+			if (const auto date{mime_msg.date().or_else([&]{
+					return mime_msg.received(); })}; date) {
+				doc.add(field.id, date->first);
+				doc.add(Field::Id::UtcOffset, date->second);
+			}
 			break;
 		case Field::Id::EmbeddedText:
 			doc.add(field.id, priv.embedded);
@@ -801,6 +807,8 @@ fill_document(Message::Private& priv)
 		case Field::Id::To:
 			doc.add(field.id, mime_msg.contacts(Contact::Type::To));
 			break;
+		case Field::Id::UtcOffset:
+			break; // handle already as part of Date:
 		/* LCOV_EXCL_START */
 		case Field::Id::_count_:
 		default:

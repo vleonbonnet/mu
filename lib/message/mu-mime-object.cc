@@ -22,7 +22,9 @@
 #include "gmime/gmime-message.h"
 #include "utils/mu-utils.hh"
 #include "utils/mu-utils-file.hh"
+#include <algorithm>
 #include <mutex>
+#include <ranges>
 #include <regex>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -334,13 +336,45 @@ MimeMessage::make_from_text(const std::string& text)
 		return make_from_stream(std::move(stream));
 }
 
-Option<int64_t>
+static MimeMessage::Date date_from_date_time(GDateTime* dt)
+{
+	constexpr auto usecs_per_sec = 1'000'000;
+	return MimeMessage::Date {g_date_time_to_unix(dt),
+				  g_date_time_get_utc_offset(dt) / usecs_per_sec };
+}
+
+
+Option<MimeMessage::Date>
 MimeMessage::date() const noexcept
 {
 	if (/*const*/GDateTime *dt{g_mime_message_get_date(self())}; !dt)
 		return Nothing;
-	else
-		return g_date_time_to_unix(dt);
+	else {
+		return date_from_date_time(dt);
+	}
+}
+
+Option<MimeMessage::Date>
+MimeMessage::received() const noexcept
+{
+	const auto recv{header("Received")};
+	if (!recv)
+		return Nothing;
+
+	/* per RFC 5322, "Received:" is *received-token ";" date-time, so the
+	 * date-time follows the _last_ semicolon. */
+	const auto pos{recv->rfind(';')};
+	if (pos == std::string::npos)
+		return Nothing;
+
+	GDateTime *dt{g_mime_utils_header_decode_date(recv->c_str() + pos + 1)};
+	if (!dt)
+		return Nothing;
+
+	const auto date{date_from_date_time(dt)};
+	g_date_time_unref(dt);
+
+	return date;
 }
 
 constexpr Option<GMimeAddressType>
@@ -368,20 +402,20 @@ address_type(Contact::Type ctype)
 static Mu::Contacts
 all_contacts(const MimeMessage& msg)
 {
-	Contacts contacts;
-
-	for (auto&& cctype: {
+	constexpr auto ctypes = std::to_array({
 			Contact::Type::Sender,
 			Contact::Type::From,
 			Contact::Type::ReplyTo,
 			Contact::Type::To,
 			Contact::Type::Cc,
 			Contact::Type::Bcc
-		}) {
-		auto addrs{msg.contacts(cctype)};
-		std::move(addrs.begin(), addrs.end(),
+		});
+
+	Contacts contacts;
+	std::ranges::move(ctypes | std::views::transform([&](auto ctype) {
+				return msg.contacts(ctype); })
+			         | std::views::join,
 			  std::back_inserter(contacts));
-	}
 
 	return contacts;
 }
@@ -431,7 +465,8 @@ MimeMessage::contacts(Contact::Type ctype) const noexcept
 		return {};
 
 	Contacts contacts;
-	add_contacts(addrs, ctype, date().value_or(0), contacts);
+	const auto mdate{date()};
+	add_contacts(addrs, ctype, mdate ? mdate->first : 0, contacts);
 
 	return contacts;
 }
