@@ -76,6 +76,25 @@ option('guile-extension-dir',
        description: 'custom install path for the guile extension module')
 
 #
+# completion
+#
+option('bash-completion',
+       type : 'feature',
+       value: 'auto',
+       description: 'whether to install bash completion for mu')
+option('bash-completion-dir',
+       type: 'string',
+       description: 'custom install path for bash completion')
+
+option('zsh-completion',
+       type : 'feature',
+       value: 'auto',
+       description: 'whether to install zsh completion for mu')
+option('zsh-completion-dir',
+       type: 'string',
+       description: 'custom install path for zsh completion')
+
+#
 # misc
 #
 
