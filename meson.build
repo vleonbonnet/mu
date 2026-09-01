@@ -17,7 +17,7 @@
 ################################################################################
 # project setup
 project('mu', ['c', 'cpp'],
-        version: '1.14.4-pre1',
+        version: '1.14.4-pre2',
         meson_version: '>= 1.3.2',
         license: 'GPL-3.0-or-later',
         default_options : {
@@ -28,9 +28,9 @@ project('mu', ['c', 'cpp'],
 
 fs = import('fs')
 
-# hard-code the datxe here (for reproducibility); we derive the dates used in
+# hard-code the date here (for reproducibility); we derive the dates used in
 # e.g. documentation from this.
-mu_date='2026-08-11'
+mu_date='2026-08-31'
 
 # installation paths
 prefixdir = get_option('prefix')
@@ -127,6 +127,8 @@ config_h_data.set_quoted('PACKAGE_NAME', meson.project_name())
 add_project_arguments(['-DHAVE_CONFIG_H'], language: ['c', 'cpp'])
 config_h_dep=declare_dependency(
   include_directories: include_directories(['.']))
+
+config_h_data.set('MU_COPYRIGHT_YEAR', mu_year)
 
 #
 # d_type, d_ino are not available universally, so let's check
@@ -433,6 +435,7 @@ if emacs.found()
 endif
 
 summary({'bash' : get_option('bash-completion').allowed(),
+         'fish' : get_option('fish-completion').allowed(),
          'zsh'  : get_option('zsh-completion').allowed()},
         section: 'Completion', bool_yn: true)
 
