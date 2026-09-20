@@ -1915,7 +1915,7 @@ C-c C-c      send message
 C-c C-d      save to drafts and leave
 C-c C-k      kill the message buffer (the message remains in the draft folder)
 C-c C-a      attach a file (pro-tip: drag & drop works as well in graphical context)
-C-c C-;      switch the context
+C-c ;        switch the context
 
 (mu4e-specific)
 C-S-u        update mail & re-index
@@ -1937,23 +1937,6 @@ It is also possible to use @code{mu4e}'s completion elsewhere in @code{emacs}. T
 enable that, a function @code{mu4e-complete-contact} exists, which you can add to
 @code{completion-at-point-functions}, see @ref{(elisp) Completion in Buffers}.
 @code{mu4e} must be running for any completions to be available.
-
-@subsection Emacs 31 workaround
-
-In Emacs 31.1 (and later) there appears to be a problem with the @t{substring}
-completion style when completion addresses (see
-#2946@footnote{@url{https://github.com/djcb/mu/issues/2946}}); if you encounter
-this, you can try something like:
-
-@lisp
-(add-hook 'mu4e-compose-mode-hook
-  (lambda () (setq-local completion-styles '(basic emacs22))))
-@end lisp
-
-If installed, the
-@t{orderless}@footnote{@url{https://elpa.gnu.org/packages/orderless.html}}
-completion-style can be a good replacement for @t{substring} (put before
-@t{basic} in the example above).
 
 @subsection Limiting the number of addresses
 

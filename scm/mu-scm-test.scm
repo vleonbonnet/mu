@@ -1,6 +1,6 @@
 ;; unit tests
 
-(use-modules (mu) (srfi srfi-64)
+(use-modules (mu) (srfi srfi-64) (ice-9 regex)
              (srfi srfi-19)
 	     (ice-9 textual-ports))
 
@@ -119,12 +119,49 @@
     (test-equal (language msg)
       (if (assoc-ref (configuration) 'language-enabled?) 'en #f))
 
+    (when (assoc-ref (configuration) 'language-enabled?)
+      (test-assert (language? msg 'en))
+      (test-assert (language? msg '(fi nl en)))
+      (test-assert (not(language? msg '(fr uk)))))
+
     ;; cc, bc, labels
     (test-equal '() (cc msg))
     (test-equal '() (bcc msg))
     (test-equal '() (labels msg)))
 
   (test-end "test-message-more"))
+
+(define (test-message-recips)
+  (test-begin "test-recips")
+  (let* ((msg (car (mfind "message-id:f7ccd24b0808061357t453f5962w8b61f9a453b684d0@mail.gmail.com"))))
+    (test-assert (mailing-list? msg))
+    (test-equal "help-gnu-emacs.gnu.org" (mailing-list msg))
+    (test-equal "Re: basic question: going back to dired" (subject msg))
+    (test-equal '(((email . "help-gnu-emacs@gnu.org"))) (cc msg))
+    (test-equal '(((email . "juanma_bellon@yahoo.es") (name . "Juanma"))) (to msg))
+    (test-equal '(((email . "juanma_bellon@yahoo.es") (name . "Juanma"))
+                  ((email . "help-gnu-emacs@gnu.org"))) (recipients msg))
+    (test-equal '(((email . "anon@example.com"))
+                  ((email . "juanma_bellon@yahoo.es") (name . "Juanma"))
+                  ((email . "help-gnu-emacs@gnu.org"))) (contacts msg)))
+  (test-end "test-recips"))
+
+(define (test-match-contact)
+  (test-begin "match-contact")
+  (let ((contacts '(((email . "foo@example.com") (name . "Foo Bar"))
+                 ((email . "fnorb@example.com") (name . "Fnorb")))))
+    (test-assert (match-contact? contacts "Foo"))
+    (test-assert (match-contact? contacts "fnorb"))
+    (test-assert (match-contact? (cadr contacts) "Fnorb"))
+    (test-assert (not (match-contact? contacts "cuux")))
+    (test-assert (not (match-contact? contacts "Example")))
+
+    (test-assert (not (match-contact? contacts "foo bar")))
+    (test-assert (match-contact? contacts (make-regexp "foo bar" regexp/icase)))
+    (test-assert (imatch-contact? contacts "foo bar"))
+
+    (test-assert (match-contact? contacts (make-regexp "F.o.b" ))))
+  (test-end "match-contact"))
 
 (define (test-message-parts)
   (test-begin "test-message-parts")
@@ -148,13 +185,17 @@
 
 (define (test-message-labels)
   (test-begin "test-message-labels")
-  (let* ((perfmsgs (mfind "label:performance")))
+  (let* ((perfmsgs (mfind "label:performance"))
+	 (msg (car perfmsgs)))
     (test-equal 4 (length perfmsgs))
     (for-each (lambda (msg)
 		(test-equal 1 (length (labels msg)))
 		(test-equal "performance" (car (labels msg))))
-	      perfmsgs))
-    (test-end "test-message-labels"))
+	      perfmsgs)
+    (test-assert (label? msg "performance"))
+    (test-assert (label? msg '("performance" "antlers")))
+    (test-assert (not (label? msg '("mars" "twix")))))
+  (test-end "test-message-labels"))
 
 (define (test-message-new)
   (test-begin "test-message-new")
@@ -229,8 +270,10 @@
       (test-mfind)
       (test-message-full)
       (test-message-more)
+      (test-message-recips)
       (test-message-parts)
       (test-message-labels)
+      (test-match-contact)
       (test-message-new)
       (test-options)
       (test-helpers)

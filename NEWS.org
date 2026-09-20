@@ -30,22 +30,6 @@
 
 *** mu4e
 
-**** Work-around
-
-     In Emacs 31.1 (and later) there appears to be a problem with the =substring=
-     completion style when completion addresses (see #2946); if you encounter
-     this, you can try something like:
-
-   #+begin_src elisp
-     (add-hook 'mu4e-compose-mode-hook
-         (lambda () (setq-local completion-styles '(basic emacs22))))
-   #+end_src
-
-     If installed, the [[https://elpa.gnu.org/packages/orderless.html][orderless]] style can be a good replacement for ~substring~.
-     (put before ~basic~ in the example above).
-
-**** Updates
-
    - ~mu4e-main-hide-personal-addresses~ can now also be a number, which
      is the maximum number of addresses to show. This can be useful if you have
      so many personal addresses that they clutter up the main view. (1.14.0)
@@ -83,7 +67,7 @@
      An old feature-request, finally implemented. (1.14.2)
 
    - In the message-view URLs/email addresses no longer automatically get an
-     indicator next to them (=[1]=, =[2]= etc.); these appear only when you invoke
+     indicator next to them ([1],[2] etc.); these appear only when you invoke
      ~mu4e-view-go-to-url~ (~g~) or ~mu4e-view-save-url~ (~k~). However, you can set
      ~mu4e-view-always-show-url-indicators~ to non-~nil~ to restore the old behavior
      (1.14.3)
@@ -107,6 +91,8 @@
      ~mu4e-has-address-p~ => ~mu4e-message-contact-field-matches~
      ~mu4e-has-my-address-p~ => ~mu4e-message-contact-field-matches-me~ (1.14.4)
 
+   - ~mu4e-compose-resend~ now honors ~mu4e-sent-messages-behavior~ (1.14.4)
+
 *** scm
 
    - Added new ~--eval~ command-line option, so you can do e.g.
@@ -117,13 +103,25 @@
    (1.14.0)
 
    - Add procedures ~configuration~ (an alist with the system configuration) and
-     ~fields~/~field~ (alists with metadata about database fields). See the SCM
+     ~fields/field~ (alists with metadata about database fields). See the SCM
      reference documentation for further details (1.14.3).
 
    - Add procedures ~date-object~ which is like ~date~, but returns message's
      sent-date as an SRFI-19 object; and ~utc-offset~ to get the UTC (timezone)
      offset for a date. Similarly, add ~changed-object~ to complement ~changed~
      (1.14.3)
+
+   - add convenience procedures ~language?~ for testing a message's language;
+     ~label?~ for testing if a message has a given label (1.14.4)
+
+   - Add procedures to get contact list for messages: ~contacts~ (From/To/Cc/Bcc)
+     and ~recipients~ (To/Cc/Bcc). Add ~match-contact?~, ~imatch-contact?~ to match
+     (lists of) contacts against regular expressions (1.14.4)
+
+   - rename procedure ~list?~ into ~mailing-list?~, since the former is core binding
+     we should not override. This is a breaking change, unfortunately, but
+     hopefully should not affect too many users. (1.14.4)
+
 
 * 1.12 (released on February 24, 2024)
 

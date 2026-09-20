@@ -25,6 +25,7 @@
   :use-module (ice-9 optargs)
   :use-module (ice-9 format)
   :use-module (ice-9 binary-ports)
+  :use-module (ice-9 regex)
   #:export (
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	    ;; Mime-parts
@@ -51,7 +52,9 @@
 	    path
 	    priority
 	    subject
+
 	    labels
+            label?
 
 	    references
 	    thread-id
@@ -59,6 +62,8 @@
 	    mailing-list
 
 	    language
+            language?
+
 	    size
 
 	    ;; message flags / predicates
@@ -75,7 +80,7 @@
 	    encrypted?
 	    attach?
 	    unread?
-	    list?
+	    mailing-list?
 	    personal?
 	    calendar?
 
@@ -84,6 +89,10 @@
 	    to
 	    cc
 	    bcc
+            recipients
+            contacts
+            match-contact?
+            imatch-contact?
 
 	    ;; message-body
 	    body
@@ -111,7 +120,7 @@
             fields
             field
 
-            %options  ;; deprecated, use (options)
+            %options ;; deprecated, use (options)
 
 	    ;; logging
 	    debug
@@ -371,7 +380,7 @@ This is the number of seconds since epoch; #f if not found."
 
 (define-method (utc-offset (message <message>))
   "Get the UTC offset in seconds for this MESSAGE.
-I.e., the offset from the UTC for the time the message was sent.
+I.e., the offset from the UTC for the time and place the message was sent.
 #f if not available."
     (assoc-ref (message->alist message) 'utc-offset))
 
@@ -408,6 +417,13 @@ Return #f otherwise."
   (when-let ((lang (assoc-ref (message->alist message) 'language)))
     (string->symbol lang)))
 
+(define-method (language? (message <message>) langs)
+  "Is the message written in (one of) LANGS?
+LANG can be either an ISO-639-1 language symbol or a list thereof."
+  (when-let* ((msglang (language message))
+              (langs (if (list? langs) langs (list langs))))
+    (if (memq msglang langs) #t #f)))
+
 (define-method (size (message <message>))
   "Get the size of the MESSAGE in bytes or #f if not available."
   (assoc-ref (message->alist message) 'size))
@@ -423,6 +439,13 @@ the empty list."
 (define-method (labels (message <message>))
   "Get the list of labels for MESSAGE."
   (or (assoc-ref (message->alist message) 'labels) '()))
+
+(define-method (label? (message <message>) labs)
+  "Does the message have any of the labels in LABS?
+LABS is either a label or a list of labels."
+  (when-let* ((msglabs (labels message))
+              (labs (if (list? labs) labs (list labs))))
+    (if (any (lambda(lab) (member lab labs)) msglabs) #t #f)))
 
 (define-method (thread-id (message <message>))
   "Get the oldest (first) reference for MESSAGE, or message-id if there are none.
@@ -490,9 +513,9 @@ This is method is useful to determine the thread a message is in."
   "Is MESSAGE unread?"
   (flag? message 'unread))
 
-(define-method (list? (message <message>))
+(define-method (mailing-list? (message <message>))
   "Is MESSAGE from some mailing-list?"
-  (flag? message 'list))
+  (flag? message 'list)) ;; list, not mailing-list.
 
 (define-method (personal? (message <message>))
   "Is MESSAGE personal?"
@@ -518,6 +541,47 @@ This is method is useful to determine the thread a message is in."
   "Get the list of (intended) blind carbon-copy recipient for MESSAGE (the Bcc:
 field)."
   (or (assoc-ref (message->alist message) 'bcc) '()))
+3
+(define-method (recipients (message <message>))
+  "Get the list of To/Cc/Bcc for message."
+  (append (to message) (cc message) (bcc message)))
+
+(define-method (contacts (message <message>))
+  "Get the list of From/To/Cc/Bcc for message."
+  (append (from message) (to message) (cc message) (bcc message)))
+
+(define (match-contact? contact rx)
+  "Does CONTACT match regular-expression RX?
+
+A contact is an alist of the form:
+  ((email . \"email\" (name . \"name\")
+where the name element is optional.
+
+Contact can also be a list of such single contacts;
+in that case, match any of the contacts in the list.
+
+RX is either a string or a regexp object as in (ice9 regex)
+
+Match returns #t if either contact or name match the
+regular expression; return #f otherwise."
+  (let ((single-contact? (lambda (contact)
+                            (and (pair? contact)
+                                 (symbol? (caar contact)))))
+        (rx (if (regexp? rx) rx (make-regexp rx))))
+    (if (single-contact? contact)
+        (let ((email (assoc-ref contact 'email))
+              (name (assoc-ref contact 'name)))
+          (if (or (and email (regexp-exec rx email))
+                  (and name (regexp-exec rx name))) #t #f))
+        ;; list of contacts
+        (any (lambda (ct) (match-contact? ct rx)) contact))))
+
+(define (imatch-contact? contact rx)
+  "Does CONTACT match regular-expression RX?
+
+Like match-contact?, but match case-insensitively.
+RX must be a string."
+  (match-contact? contact (make-regexp rx regexp/icase)))
 
 (define* (body message #:key (html? #f))
   "Get the MESSAGE body or #f if not found
