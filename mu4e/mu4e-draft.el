@@ -246,6 +246,10 @@ messages, it is nil.")
   "The compose-type for the current message.")
 (put 'mu4e-compose-type 'permanent-local t)
 
+(defvar-local mu4e--compose-context nil
+  "Name of the context this draft was composed in.")
+(put 'mu4e--compose-context 'permanent-local t)
+
 ;;; Filenames
 (defun mu4e--draft-basename()
   "Construct a randomized filename for a message with flags FLAGSTR.
@@ -356,7 +360,8 @@ With HEADERS-ONLY non-nil, only include the headers part."
       (rfc822-goto-eoh)
       (decode-coding-region (point-min) (point) 'utf-8))
     (mm-enable-multibyte)
-    (ignore-errors (run-hooks 'gnus-article-decode-hook))
+    (let ((rfc2047-quote-decoded-words-containing-tspecials t))
+      (ignore-errors (run-hooks 'gnus-article-decode-hook)))
     (buffer-substring-no-properties (point-min) (point-max))))
 
 (defvar mu4e--draft-buffer-max-name-length 48)
@@ -507,6 +512,8 @@ appropriate flag at the message forwarded or replied-to."
 
 (defun mu4e--compose-before-send ()
   "Function called just before sending a message."
+  (when-let* ((cname mu4e--compose-context))
+    (mu4e-context-switch nil cname)) ;; restore; may have changed
   ;; Remove References: if In-Reply-To: is missing.
   ;; This allows the user to effectively start a new message-thread by
   ;; removing the In-Reply-To header.
@@ -645,7 +652,9 @@ COMPOSE-TYPE and PARENT are as in `mu4e--draft'."
   ;; available in mode-hooks.
   (setq-local
    mu4e-compose-parent-message parent
-   mu4e-compose-type compose-type)
+   mu4e-compose-type compose-type
+   mu4e--compose-context (when-let* ((ctx (mu4e-context-current)))
+                           (mu4e-context-name ctx)))
 
   ;; draft path
   (unless (eq compose-type 'edit)
