@@ -1657,10 +1657,11 @@ the Helm-mechanism for selecting multiple}.
 which is requirement of the underlying completion mechanism works. If there are
 duplicates, only one is recognized.
 
-Furthermore, file names that match @code{crm-separator} (by default, commas) are
-@emph{not} supported (see @code{completing-read-multiple} for further details). For
-such corner-cases, it is recommended to use @code{mu4e-view-mime-part-action}
-instead, which does not have this limitation.
+When choosing multiple files, they must be separated by some character;
+typically this is a comma, but if there is a comma in any of the files, @t{mu4e}
+picks some other character; the prompt shows which. In the unlikely case that
+the file names contain all of those, it is recommended to use
+@code{mu4e-view-mime-part-action} instead, which does not have this limitation.
 
 @subsection Other MIME-parts
 
@@ -3067,9 +3068,10 @@ what that means for these special folders.
 * Other dynamic folders:: Flexible folders for sent, trash, drafts
 @end menu
 
-
 @node Smart refiling
 @section Smart refiling
+@cindex refiling
+@cindex smart refiling
 
 When refiling messages, perhaps to archive them, it can be useful to have
 different target folders for different messages, based on some property of
@@ -3084,9 +3086,9 @@ message. An example should clarify this:
   (lambda (msg)
     (cond
       ;; messages to the mu mailing list go to the /mu folder
-      ((mu4e-has-address-p msg :to "mu-discuss@@googlegroups.com") "/mu")
+      ((mu4e-matches-contact-p msg :to "mu-discuss@@googlegroups.com") "/mu")
       ;; messages sent directly to some specific address go to /private
-      ((mu4e-has-address-p msg :to "me@@example.com") "/private")
+      ((mu4e-matches-contact-p msg :to "me@@example.com") "/private")
       ;; messages with football or soccer in the subject go to /football
       ((string-match "football\\|soccer" (mu4e-message-field msg :subject))
         "/football")
@@ -3111,7 +3113,7 @@ describing a message}. The plist corresponds to the message at point. See
 @item In our function, we use a @t{cond} control structure; the function
 returns the first of the clauses that matches. It's important to make the last
 clause a catch-all, so we always return @emph{some} folder.
-@item We use the function @code{mu4e-has-address-p}
+@item We use the function @code{mu4e-matches-contact-p}
 @footnote{This is a convenience alias for
 @code{mu4e-message-contact-field-matches}, since 1.14.4}, which evaluates to
 non-nil if any of the names or e-mail addresses in a contact field (in this
@@ -3283,7 +3285,8 @@ Or another one, to import a calendar invitation into the venerable emacs diary:
 @lisp
 (add-to-list 'mu4e-view-mime-part-actions
     ;; import into calendar;
-    '(:name "dimport-in-diary" :handler (lambda(file) (icalendar-import-file file diary-file))
+    '(:name "dimport-in-diary"
+      :handler (lambda(file) (icalendar-import-file file diary-file))
       :receives temp))
 @end lisp
 
@@ -3406,7 +3409,7 @@ Note that:
 
 If you are only looking for a match in this list (e.g., ``Is Jack one of the
 recipients of the message?''), there is a convenience function
-@code{mu4e-message-contact-field-matches} to make this easy.
+@code{mu4e-matches-contact-p} to make this easy.
 @item The message body is only available in the message view, not in the
 headers view.
 @end itemize
@@ -4591,10 +4594,6 @@ arguments, following @t{completing-read}. The default value is
 @code{completing-read}. Helm users can use the same value, and by enabling
 @code{helm-mode} use helm-style completion.
 
-@subsection With a lot of Maildir folders, jumping to them can get slow. What can I do?
-Set @code{mu4e-cache-maildir-list} to @code{t} (make sure to read its
-docstring).
-
 @subsection How can I hide certain messages from the search results?
 See the variables @code{mu4e-headers-hide-predicate} and
 @code{mu4e-headers-hide-enabled}. The latter can be toggled through
@@ -4784,10 +4783,9 @@ your configuration (courtesy of user @t{kpachnis}):
       mml2015-sign-with-sender t)
 @end lisp
 
-
 @subsection Some plain-text attachments get corrupted, how can I avoid that?
 @code{mu4e} (or, more precisely, its Gnus helpers) automatically convert CR-LF
-(``Windows-style'') line-endings to Unix line endings for the text attachments.
+(``Windows-style'') line-endings to Unix line endings for text attachments.
 
 That is usually convenient, but can be problematic when attachments are
 mislabeled as text when they contain binary data: in that case, the conversion
@@ -4829,18 +4827,6 @@ See @ref{Compose hooks}.
 Since @code{mu4e-compose-mode} derives from @code{gnus-article-mode}, see
 @ref{(message) Top}, you can re-use many (though not @emph{all}) of its
 facilities.
-
-@subsection Replying to unquoted contacts with commas in their name
-
-Senders may have commas in their RFC2047-encoded name without using the needed
-quoting, for instance @t{From: Foo, the great Bar <foo@@bar.com>} instead of
-@t{From: "Foo, the great Bar" <foo@@bar.com>}.
-
-By default, when replying to such messages, @code{mu4e} then interprets the address
-as @emph{multiple} contacts. To avoid that, you can add to your configuration:
-@lisp
-(setq rfc2047-quote-decoded-words-containing-tspecials t)
-@end lisp
 
 @subsection How can I easily include attachments in the messages I write?
 You can drag-and-drop from your desktop; alternatively, you can use @ref{(emacs)
@@ -4978,12 +4964,6 @@ of known issues and/or missing features in @code{mu4e}. Thus, users won't have t
 search in vain for things that are not there (yet), and the author can use it as
 a todo-list.
 
-@subsection UTF-8 language environment is required
-@code{mu4e} does not work well if the Emacs language environment is not UTF-8;
-so, if you encounter problems with encodings, be sure to have
-@code{(set-language-environment "UTF-8")} in your @file{~/.emacs.d/init.el} (or
-its moral equivalent, such as @file{~/.emacs}.
-
 @subsection Headers-buffer can get mis-aligned
 Due to the way the headers buffer works, it can get misaligned.
 
@@ -5072,88 +5052,65 @@ is an indication that the font you are using does not support those characters.
 @section Refiling messages
 
 By setting @code{mu4e-refile-folder} to a function, you can dynamically
-determine where messages are to be refiled. If you want to do this based
-on the subject of a message, you can use a function that matches the
-subject against a list of regexes in the following way. First, set up a
-variable @code{my-mu4e-subject-alist} containing regexes plus associated
-mail folders:
+determine where messages are to be refiled.
 
-@lisp
-(defvar my-mu4e-subject-alist '(("kolloqui\\(um\\|a\\)" . "/Kolloquium")
-                                ("Calls" . "/Calls")
-                                ("Lehr" . "/Lehre")
-                                ("webseite\\|homepage\\|website" . "/Webseite"))
-  "List of subjects and their respective refile folders.")
-@end lisp
-
-Now you can use the following function to automatically refile messages
-based on their subject line:
+If you want to do this based on the subject of a message, you could use a
+function that matches the message subject against a list of regular expressions,
+and choose the refile-folder based on that; for example:
 
 @lisp
 (defun my-mu4e-refile-folder-function (msg)
   "Set the refile folder for MSG."
-  (let ((subject (mu4e-message-field msg :subject))
-        (folder (or (cdar (member* subject my-mu4e-subject-alist
-                                   :test #'(lambda (x y)
-                                             (string-match (car y) x))))
-                    "/General")))
-    folder))
+  (or (cdr-safe
+       (seq-find (lambda(cell)
+                   (mu4e-matches-subject-p msg (car cell)))
+                 '(("soccer\\|football"   . "/football")
+                   ("school"              . "/school")
+                   ("homepage\\|website"  . "/website"))))
+       "/general")) ;; default; must always return a valid folder
+
+(setq mu4e-refile-folder #'my-mu4e-refile-folder-function)
 @end lisp
 
-Note the @t{"/General"} folder: it is the default folder in case the
-subject does not match any of the regexes in
-@code{my-mu4e-subject-alist}.
-
-In order to make this work, you'll of course need to set
-@code{mu4e-refile-folder} to this function:
-
-@lisp
-(setq mu4e-refile-folder 'my-mu4e-refile-folder-function)
-@end lisp
-
-If you have multiple accounts, you can accommodate them as well:
+Note the @t{"/general"} folder: it is the default folder in case the subject
+does not match any of the regular expressions. If you have multiple accounts,
+you can accommodate them as well, for example with the following. It shows how
+you can use flexible, account-specific strategies to determine the
+refile-folder.
 
 @lisp
 (defun my-mu4e-refile-folder-function (msg)
-  "Set the refile folder for MSG."
-  (let ((maildir (mu4e-message-field msg :maildir))
-        (subject (mu4e-message-field msg :subject))
-        folder)
+  "Set the refile folder for MSG, multiple accounts.
+
+Assume all message for some account arrive in some account-specific
+folder, e.g. \"Account1\", \"Account2\"."
+  (let ((maildir (mu4e-message-field msg :maildir)))
     (cond
-     ((string-match "Account1" maildir)
-      (setq folder (or (catch 'found
-                         (dolist (mailing-list my-mu4e-mailing-lists)
-                           (if (mu4e-message-contact-field-matches
-                             msg :to (car mailing-list))
-                               (throw 'found (cdr mailing-list)))))
-                       "/Account1/General")))
-     ((string-match "Gmail" maildir)
-      (setq folder "/Gmail/All Mail"))
-     ((string-match "Account2" maildir)
-      (setq folder (or (cdar (member* subject my-mu4e-subject-alist
-                                      :test #'(lambda (x y)
-                                                (string-match
-                                                   (car y) x))))
-                       "/Account2/General"))))
-    folder))
+     ;; for account1, we refile based on the address a message
+     ;; was sent to (mailing lists)
+     ((string-match-p "Account1" maildir)
+      (or (cdr-safe
+           (seq-find (lambda(cell)
+                       (mu4e-matches-contact-p msg :recip (car cell)))
+                     '(("mu-discuss@@googlegroups.com"     . "/Account1/mu4e")
+                       ("pandoc-discuss@@googlegroups.com" . "/Account1/Pandoc")
+                       ("auctex@@gnu.org"                  . "/Account1/AUCTeX"))))
+          "/Account1/archive"))
+     ;; account2
+     ((string-match-p "Account2" maildir)
+      (or (cdr-safe
+           (seq-find (lambda(cell)
+                       (mu4e-matches-subject-p msg (car cell)))
+                     '(("soccer\\|football"   . "/Account2/football")
+                       ("school"              . "/Account2/school")
+                       ("homepage\\|website"  . "/Account2/website"))))
+          "/Account2/archive"))
+     ;; default, catch-all
+     (t "/archive"))))
 @end lisp
 
-This function actually uses different methods to determine the refile
-folder, depending on the account: for @emph{Account2}, it uses
-@code{my-mu4e-subject-alist}, for the @emph{Gmail} account it simply uses the
-folder ``All Mail''. For Account1, it uses another method: it files the
-message based on the mailing list to which it was sent. This requires
-another variable:
-
-@lisp
-(defvar my-mu4e-mailing-lists
-  '(("mu-discuss@@googlegroups.com" . "/Account1/mu4e")
-    ("pandoc-discuss@@googlegroups.com" . "/Account1/Pandoc")
-    ("auctex@@gnu.org" . "/Account1/AUCTeX"))
-  "List of mailing list addresses and folders where
-   their messages are saved.")
-@end lisp
-
+It is an error for @code{mu4e-refile-folder} to return anything but a valid
+folder.
 
 @node Refiling from the command-line
 @section Refiling from the command-line
