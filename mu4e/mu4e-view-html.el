@@ -30,6 +30,8 @@
 (require 'mm-decode)
 (require 'gnus-art)
 (require 'browse-url)
+(require 'dom)
+(require 'subr-x)
 (require 'mu4e-helpers)
 (require 'mu4e-message)
 (require 'mu4e-folders)
@@ -50,11 +52,9 @@ If nil, only show when `mu4e-view-go-to-url' or
 (defcustom mu4e-view-always-use-completion nil
   "Whether to always use completing-read for choosing URLs in messages.
 
-For html-messages, we always use completion when choosing
-URLs (`mu4e-view-go-to-url', `mu4e-view-save-url' and
-`mu4e-view-fetch-url'), but setting this to non-nil, also does so
-for plain-text messages (which by default use the URL [1] [2]
-numbers in the message."
+For html-messages, we always use completion when choosing URLs.
+However, when set to non-nil, also do this for plain-text display,
+instead of the in-buffer [1][2] etc. links."
   :type 'boolean
   :group 'mu4e-view)
 
@@ -63,10 +63,12 @@ numbers in the message."
 (defconst mu4e--view-html-meta
   (concat "<meta charset=\"utf-8\">"
           "<meta http-equiv=\"Content-Security-Policy\" content=\""
-          ;; note: no "default-src 'none'"; webkit does not like it
-          "script-src 'none'; object-src 'none'; frame-src 'none'; "
-          "connect-src 'none'; media-src 'none'; form-action 'none'; "
-          "style-src 'unsafe-inline'; img-src data:\">")
+          ;; block everything, except for inline styles and data: images and
+          ;; fonts. Note: form-action and base-uri do not fall back to
+          ;; default-src.
+          "default-src 'none'; style-src 'unsafe-inline'; "
+          "img-src data:; font-src data:; "
+          "form-action 'none'; base-uri 'none'\">")
   "HTML meta tags for the head of the document. Block scripts /
 remote stuff.")
 
@@ -116,25 +118,20 @@ The %s, %s for key, value.")
               text))
 
 (defconst mu4e--view-url-regexp
-  (rx "http" (? "s") "://"
-      (* (any "-a-zA-Z0-9._~%#?&=/+:;@!$*(),'"))
-      (any "-a-zA-Z0-9_~%#&=/+@$'"))
+  "https?://[-a-zA-Z0-9._~%#?&=/+:;@!$*(),']*[-a-zA-Z0-9_~%#&=/+@$]"
   "Regexp matching URLs.")
 
 (defconst mu4e--view-email-regexp
-  (rx (any "a-zA-Z0-9") (* (any "-a-zA-Z0-9._%+"))
-      "@" (+ (any "-a-zA-Z0-9.")) "." (>= 2 alpha))
-  "Regexp matching e-mail addresses.")
+  "[a-zA-Z0-9][-a-zA-Z0-9._%+]*@[-a-zA-Z0-9.]+\\.[[:alpha:]]\\{2,\\}"
+  "Regexp matching an e-mail address.")
 
 (defconst mu4e--view-linkable-regexp
-  (rx (or (regexp mu4e--view-url-regexp)
-          (regexp mu4e--view-email-regexp)))
+  (concat mu4e--view-url-regexp "\\|" mu4e--view-email-regexp)
   "Regexp matching linkable things.")
 
 (defun mu4e--view-linkable-url (match)
   "Return the URL for MATCH."
-  (if (string-match-p (rx bos (regexp mu4e--view-email-regexp) eos)
-                      match)
+  (if (string-match-p (concat "\\`" mu4e--view-email-regexp "\\'") match)
       (concat "mailto:" match)
     match))
 
@@ -186,7 +183,7 @@ Return alist of (CID . HANDLE) pairs."
     (when-let* ((id (mm-handle-id handles)))
       ;; strip the angle brackets from the content-id
       (list (cons (replace-regexp-in-string
-                   (rx (or (seq bos "<") (seq ">" eos))) "" id)
+                   "\\`<\\|>\\'" "" id)
                   handles))))
    (t (seq-mapcat #'mu4e--view-cid-parts (cdr handles)))))
 
@@ -232,7 +229,10 @@ This adds html to it if `mu4e-view-prefer-plain-text' is non-nil."
    (t (seq-some #'mu4e--view-alternatives (cdr handles)))))
 
 (defun mu4e--view-raw-plain-preferred-p ()
-  "Return non-nil if we would show a plain-text version."
+  "Return non-nil if Gnus would show a version without html.
+This is the case if the raw message in the current buffer has
+alternatives, and the one Gnus picks (taking
+`mu4e-view-prefer-plain-text' into account) has no html."
   (let ((raw (current-buffer)))
     (with-temp-buffer
       (insert-buffer-substring raw)
@@ -253,9 +253,8 @@ This adds html to it if `mu4e-view-prefer-plain-text' is non-nil."
   "Insert TEXT after the first (opening) TAG in HTML.
 Return updated HTML, or nil."
   (let ((case-fold-search t)
-        (regexp (rx-to-string
-                 `(seq "<" ,tag (or ">" (seq space (* (not (any ">"))) ">")))
-                 t)))
+        (regexp (concat "<" (regexp-quote tag)
+                        "\\(?:>\\|[[:space:]][^>]*>\\)")))
     (when (string-match regexp html)
       (replace-match (concat (match-string 0 html) text) t t html))))
 
@@ -275,6 +274,30 @@ head, and applies to what follows it. So, let's put it first."
          (pos (and (string-match mu4e--view-html-doctype-regexp html)
                    (match-end 0))))
     (concat (substring html 0 pos) mu4e--view-html-meta (substring html pos))))
+
+(defconst mu4e--view-html-meta-tag-regexp
+  (concat "<meta\\(?:>"                     ;; bare <meta>
+          "\\|[ \t\n\f\r/]\\(?:"            ;; or a delimiter, then any of:
+          "\"[^\"]*\\(?:\"\\|\\'\\)"        ;;   "double-quoted"
+          "\\|'[^']*\\(?:'\\|\\'\\)"        ;;   'single-quoted'
+          "\\|[^\"'>]\\)*"                  ;;   anything else but >
+          "\\(?:>\\|\\'\\)\\)")             ;; until > or end
+  "Regexp matching a <meta> tag (use with `case-fold-search').
+Quoted attribute values may contain \">\"; an unterminated quote
+runs until the end, as it would for an HTML parser.")
+
+(defun mu4e--view-html-remove-meta (html)
+  "Remove all <meta> tags from HTML and return the result.
+These may do things we do not want, such as http-equiv=refresh,
+which makes the HTML-renderer load some remote URL. We add our
+own, see `mu4e--view-html-inject-meta'."
+  (let ((case-fold-search t))
+    ;; repeat, so removing one tag cannot create a new one, as in
+    ;; "<me<meta>ta ...>"
+    (while (string-match mu4e--view-html-meta-tag-regexp html)
+      (setq html (replace-regexp-in-string
+                  mu4e--view-html-meta-tag-regexp "" html t t)))
+    html))
 
 (defun mu4e--view-html-prepend-headers (html headers)
   "Insert the HEADERS block into HTML."
@@ -315,6 +338,7 @@ Use html-part or text-part if there is none."
   "Return a self-contained HTML document for MIME HANDLES, or nil.
 Prepend HEADERS if non-nil."
   (when-let* ((html (mu4e--view-html-body handles)))
+    (setq html (mu4e--view-html-remove-meta html))
     (when-let* ((cid-parts (mu4e--view-cid-parts handles)))
       (setq html (mu4e--view-resolve-cids html cid-parts)))
     (when headers
@@ -451,6 +475,80 @@ headers) keep their face."
                              'face 'mu4e-url-number-face
                              'invisible 'mu4e-url-indicator))))
 
+(defun mu4e--view-reset-links ()
+  "Clear the link maps for current buffer."
+  (setq mu4e--view-link-map (make-hash-table :size 32)
+        mu4e--view-link-labels (make-hash-table :size 32 :test #'equal)))
+
+(defun mu4e--view-register-link (url label)
+  "Add URL with LABEL to the link maps and return its number.
+If LABEL is nil, use a generic one."
+  (let ((num (1+ (hash-table-count mu4e--view-link-map))))
+    (puthash num url mu4e--view-link-map)
+    (puthash url (or label
+                     (pcase url
+                       ((pred (string-match-p "\\`mailto:")) "Mail")
+                       ((pred (string-match-p "\\`http")) "Visit")
+                       (_ "")))
+             mu4e--view-link-labels)
+    num))
+
+(defun mu4e--view-dom-link-label (link url)
+  "Return label for LINK, an <a>-element in a DOM, pointing to URL.
+That is its text or alt. Return nil if the label is empty or the
+same as URL."
+  (let* (;; not `dom-texts' (obsolete since Emacs 31)
+         ;; `dom-inner-text' (not available before Emacs 31).
+         (text (apply #'concat (dom-strings link)))
+         (text (if (string-blank-p text)
+                   (or (dom-attr (car (dom-by-tag link 'img)) 'alt) "")
+                 text))
+         (label (string-join (split-string text) " ")))
+    (unless (member label (list "" url))
+      label)))
+
+(defun mu4e--view-dom-links (dom)
+  "Return the links in DOM as a list of (URL LABEL), in document order.
+These are the href of <a> elements, plus the URLs and e-mail
+addresses in the text outside of those. LABEL is as per
+`mu4e--view-dom-link-label', or nil."
+  (cond
+   ((stringp dom)
+    (let ((start 0) (links))
+      (while (string-match mu4e--view-linkable-regexp dom start)
+        (push (list (mu4e--view-linkable-url (match-string 0 dom)) nil)
+              links)
+        (setq start (match-end 0)))
+      (nreverse links)))
+   ((memq (dom-tag dom) '(comment style script head template)) nil)
+   ((and (eq (dom-tag dom) 'a) (dom-attr dom 'href))
+    (let ((url (string-trim (dom-attr dom 'href))))
+      (unless (string-match-p "\\`\\(?:#\\|javascript:\\)" url)
+        (list (list url (mu4e--view-dom-link-label dom url))))))
+   (t (seq-mapcat #'mu4e--view-dom-links (dom-children dom)))))
+
+(defun mu4e--view-html-links (html)
+  "Return the links in HTML as a list of (URL LABEL).
+
+See `mu4e--view-dom-links'. Without libxml support, fall back to
+matching the raw HTML, which may include links for e.g. fonts and
+images."
+  (with-temp-buffer
+    (insert html)
+    (if (libxml-available-p)
+        (mu4e--view-dom-links
+         (libxml-parse-html-region (point-min) (point-max)))
+      (mapcar (lambda (link) (list (nth 2 link) nil))
+              (mu4e--view-linkable-links)))))
+
+(defun mu4e--view-register-html-links (html)
+  "Register the links in HTML in the current buffer's link maps.
+For use with `mu4e-view-go-to-url' and friends."
+  (mu4e--view-reset-links)
+  (seq-do (lambda (link) (apply #'mu4e--view-register-link link))
+          (seq-uniq (mu4e--view-html-links html)
+                    (lambda (l1 l2) (equal (car l1) (car l2))))))
+
 (defun mu4e--view-linkify-buffer-text (&optional non-visual)
   "Collect the URLs and e-mail addresses in the buffer.
 
@@ -459,13 +557,11 @@ friends.
 
 If NON-VISUAL is nil, turn them into visual clickables. Otherwise
 leave the buffer as-is, but still collect the links."
-  (let ((num 0)
-        (body-start (save-excursion
+  (let ((body-start (save-excursion
                       (goto-char (point-min))
                       (or (search-forward "\n\n" nil t) (point-min))))
         (links (mu4e--view-linkable-links)))
-    (setq mu4e--view-link-map (make-hash-table :size 32)
-          mu4e--view-link-labels (make-hash-table :size 32 :test #'equal))
+    (mu4e--view-reset-links)
     (when non-visual
       (setq links (seq-uniq
                    (sort (append links (mu4e--view-shr-links))
@@ -473,15 +569,9 @@ leave the buffer as-is, but still collect the links."
                    (lambda (l1 l2) (equal (nth 2 l1) (nth 2 l2))))))
     (dolist (link links)
       (seq-let (beg end url label) link
-        (puthash (cl-incf num) url mu4e--view-link-map)
-        (unless label
-          (setq label (pcase url
-                        ((rx bos "mailto:") "Mail")
-                        ((rx bos "http") "Visit")
-                        (_ ""))))
-        (puthash url label mu4e--view-link-labels)
-        (unless non-visual
-          (mu4e--visualize-link beg end url num body-start))))
+        (let ((num (mu4e--view-register-link url label)))
+          (unless non-visual
+            (mu4e--visualize-link beg end url num body-start)))))
     (unless non-visual
       (mu4e--view-url-indicator-display
        mu4e-view-always-show-url-indicators))))
@@ -500,8 +590,7 @@ Otherwise, hide them."
   (dolist (ov (overlays-in (point-min) (point-max)))
     (when (overlay-get ov 'mu4e-overlay)
       (delete-overlay ov)))
-  (setq mu4e--view-link-map (make-hash-table :size 32)
-        mu4e--view-link-labels (make-hash-table :size 32 :test #'equal)))
+  (mu4e--view-reset-links))
 
 (defun mu4e--view-get-urls-num (prompt &optional multi)
   "Ask the user with PROMPT for an URL number for current message.
