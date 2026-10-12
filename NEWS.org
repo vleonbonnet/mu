@@ -8,7 +8,9 @@
 
 *** build
 
-- The build now use meson's "wrap" packages, replacing most of ~thirdparty/~ (except for ~tl-optional~). As before, system-installed versions have precedence (1.14.4)
+  - The build now use meson's "wrap" packages, replacing most of ~thirdparty/~
+    (except for ~tl-optional~). As before, system-installed versions have
+    precedence (1.14.4)
 
 *** mu
 
@@ -71,6 +73,9 @@
      ~mu4e-view-always-show-url-indicators~ to non-~nil~ to restore the old behavior
      (1.14.3)
 
+   - New option ~mu4e-view-ignore-links~ to exclude links (by default,
+     no-reply-links) from ~mu4e-view-go-to-url~ and friends (1.14.4)
+
    - In the message-view, ~mu4e~ now also generates an HTML version for text-only
      messages, thus making ~mu4e-view-toggle-html~ (~h~) work for all, and allowing
      for displaying them in external browser (1.14.3)
@@ -100,7 +105,14 @@
      messages in HTML-mode. See the section info:mu4e#Links in the Mu4e
      reference manual (1.14.4)
 
-   - While ~mu4e~ has had ~xwidget~ support for years, the upstream (Emacs) implementation was not compatible with current Webkit-library versions for a few release, until 31.1. Now, with it becoming available again, ~mu4e~ adds extended support, including setting ~xwidget~ as the default HTML-renderer for messages (see ~mu4e-view-html-renderer~ and the [[info:(mu4e) Rich-text][section in the manual]]) (1.14.4)
+   - While ~mu4e~ has had ~xwidget~ support for years, the upstream (Emacs)
+     implementation was not compatible with current Webkit-library versions for
+     a few release, until 31.1.
+
+     Now, with ~xwidget~ becoming available again, ~mu4e~ experimentally adds much
+     deeper integration, including setting ~xwidget~ as the default HTML-renderer
+     for messages (see ~mu4e-view-html-renderer~ and the [[info:(mu4e) Rich-text][section in the manual]])
+     (1.14.4)
 
 *** scm
 
@@ -131,7 +143,6 @@
    - rename procedure ~list?~ into ~mailing-list?~, since the former is core binding
      we should not override. This is a breaking change, unfortunately, but
      hopefully should not affect too many users. (1.14.4)
-
 
 * 1.12 (released on February 24, 2024)
 
