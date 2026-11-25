@@ -341,7 +341,12 @@ Q46aYjxe0As6AP90bcAZ3dcn5RcTJaM0UhZssguawZ+tnriD3+5DPkMMCg==
 )";
 	TempDir tempdir;
 	auto ctx{MimeCryptoContext::make_gpg(tempdir.path())};
-	g_assert_true(!!ctx);
+	if (!ctx) {
+		/* gmime can be built without gpg support; then there is no
+		 * crypto context and nothing to test here. */
+		g_test_skip("no gpg support in this gmime build");
+		return;
+	}
 
 	auto stream{MimeStream::make_mem()};
 	stream.write(pub_key.data(), pub_key.size());
@@ -419,7 +424,12 @@ C0bdoCx44QVU8HaZ2x91h3GoM/0q5bqM/rvCauwbokiJgAUrznecNPY=
 )";
 	TempDir tempdir;
 	auto ctx{MimeCryptoContext::make_gpg(tempdir.path())};
-	g_assert_true(!!ctx);
+	if (!ctx) {
+		/* gmime can be built without gpg support; then there is no
+		 * crypto context and nothing to test here. */
+		g_test_skip("no gpg support in this gmime build");
+		return;
+	}
 
 	/// test1234
 	// ctx->set_request_password([](const MimeCryptoContext& ctx,
