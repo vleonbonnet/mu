@@ -162,6 +162,33 @@ using Elements = std::vector<Element>;
 
 
 /**
+ * Measure a regex literal starting at the '/' at position pos.
+ *
+ * Regex literals cannot contain whitespace (see mu-query(7)), so the closing
+ * '/' must appear before the next separator; that keeps this unambiguous
+ * against non-regex values which merely contain a '/', such as
+ * "maildir:/foo" or "path:/a/b/c".
+ *
+ * @param str the query string
+ * @param pos position of the candidate opening '/'
+ *
+ * @return the length of the literal (including both '/'), or 0 if there is
+ * no regex literal at pos.
+ */
+static size_t
+regex_literal_length(std::string_view str, size_t pos)
+{
+	for (auto i = pos + 1; i != str.size(); ++i) {
+		if (str[i] == '/')
+			return i - pos + 1;
+		if (str[i] == ' ')
+			break;
+	}
+
+	return 0;
+}
+
+/**
  * Get the next element from the string, advancing pos
  *
  * @param str the query string
@@ -174,6 +201,10 @@ next_element(std::string_view str, size_t& pos)
 {
 	bool        quoted{}, escaped{}, had_quote{};
 	std::string value{};
+	/* one past the closing '/' of the regex literal we're scanning, if
+	 * any; inside a regex literal, '(' and ')' are regex syntax rather
+	 * than query grouping. */
+	size_t      regex_end{};
 
 	auto is_separator = [](char c) {  return c == ' '|| c == '(' || c == ')'; };
 
@@ -197,7 +228,14 @@ next_element(std::string_view str, size_t& pos)
 			}
 		}
 
-		if (!quoted && !escaped && is_separator(kar)) {
+		/* does a regex literal start here? it can only do so at the
+		 * start of a value, i.e. at the start of the element or just
+		 * after the "field:" prefix. */
+		if (kar == '/' && !quoted && !escaped && pos - 1 >= regex_end &&
+		    (value.empty() || value.back() == ':'))
+			regex_end = pos - 1 + regex_literal_length(str, pos - 1);
+
+		if (!quoted && !escaped && pos - 1 >= regex_end && is_separator(kar)) {
 			if (!value.empty()) {
 				--pos; // leave the separator for next time
 				return Element{value, had_quote};
@@ -462,7 +500,21 @@ test_processor()
 		// quoted operators are not operators
 		TestCase{R"(foo "and" bar)", R"(((_ "foo") (_ "and") (_ "bar")))"},
 		// field-names are case-insensitive
-		TestCase{R"(Subject:foo)", R"(((subject "foo")))"}
+		TestCase{R"(Subject:foo)", R"(((subject "foo")))"},
+		// a regex literal is scanned as a unit, so '(' and ')' inside
+		// it are regex syntax (groups, alternation) rather than query
+		// grouping.
+		TestCase{R"RX(from:/.*paypal\.(com|fr)/)RX",
+			 R"RX(((from (regex ".*paypal.(com|fr)"))))RX"},
+		TestCase{R"RX(subject:/(a|b)c/)RX",
+			 R"RX(((subject (regex "(a|b)c"))))RX"},
+		TestCase{R"RX(from:/(?:a|b)/ and subject:bar)RX",
+			 R"RX(((from (regex "(?:a|b)")) and (subject "bar")))RX"},
+		// ... but a value that merely starts with '/' is not a regex
+		// literal, so query grouping still applies around it.
+		TestCase{R"RX((maildir:/foo or maildir:/bar))RX",
+			 R"RX((( (maildir "/foo") or (maildir "/bar") )))RX"},
+		TestCase{R"RX(maildir:/foo/)RX", R"RX(((maildir (regex "foo"))))RX"},
 	};
 
 	for (auto&& test: cases) {
