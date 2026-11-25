@@ -115,6 +115,13 @@ test_maildir_mkdir_04()
 	auto curdir = join_paths(mdir, "cur");
 	g_assert_cmpuint(g_mkdir_with_parents(curdir.c_str(), 0000), ==, 0);
 
+	/* not every filesystem enforces the mode against the owner; on those,
+	 * the directory stays usable and there is nothing to test here. */
+	if (::access(curdir.c_str(), R_OK | W_OK) == 0) {
+		g_test_skip("this filesystem does not enforce the mode");
+		return;
+	}
+
 	/* this should fail now, because cur is not read/writable  */
 	auto res = maildir_mkdir(mdir, 0755, false);
 	g_assert_false(!!res);
